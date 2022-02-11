@@ -1,0 +1,25 @@
+{
+    "os": "Linux-5.4.144+-x86_64-with-Ubuntu-18.04-bionic",
+    "python": "3.7.12",
+    "heartbeatAt": "2022-02-08T21:03:03.333963",
+    "startedAt": "2022-02-08T21:02:59.217251",
+    "docker": null,
+    "cpu_count": 2,
+    "cuda": null,
+    "args": [
+        "-f",
+        "/root/.local/share/jupyter/runtime/kernel-128ab359-fdc0-46ec-8ade-83a9da489f76.json"
+    ],
+    "state": "running",
+    "program": "wandb_yolov3.ipynb",
+    "colab": "https://colab.research.google.com/notebook#fileId=1CC8eFhu4653JMM70giMqXBD0yq4uHYAQ",
+    "git": {
+        "remote": "https://dariagrechishnikova:@github.com/dariagrechishnikova/yolov3_detector.git",
+        "commit": "385b8e3a1db1edf5ff016ce3ef95b4282ff424fb"
+    },
+    "email": "daria.grechishnikova@gmail.com",
+    "root": "/content/drive/MyDrive/Sartorius/yolov3_detector",
+    "host": "02ed4c88ca87",
+    "username": "root",
+    "executable": "/usr/bin/python3"
+}
