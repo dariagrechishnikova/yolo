@@ -125,7 +125,7 @@ def setup_model():
 
     return model, optimizer, loss, anchors, anchor_masks
 
-
+#
 def main(_argv):
     train_dataset = dataset.load_tfrecord_dataset(
             FLAGS.dataset, FLAGS.classes, FLAGS.size)
