@@ -1,6 +1,9 @@
 from absl import app, flags, logging
 from absl.flags import FLAGS
 
+
+import wandb
+from wandb.keras import WandbCallback
 import tensorflow as tf
 import numpy as np
 import cv2
@@ -124,100 +127,36 @@ def setup_model():
 
 
 def main(_argv):
-    physical_devices = tf.config.experimental.list_physical_devices('GPU')
-
-    # Setup
-    if FLAGS.multi_gpu:
-        for physical_device in physical_devices:
-            tf.config.experimental.set_memory_growth(physical_device, True)
-
-        strategy = tf.distribute.MirroredStrategy()
-        print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
-        BATCH_SIZE = FLAGS.batch_size * strategy.num_replicas_in_sync
-        FLAGS.batch_size = BATCH_SIZE
-
-        with strategy.scope():
-            model, optimizer, loss, anchors, anchor_masks = setup_model()
-    else:
-        model, optimizer, loss, anchors, anchor_masks = setup_model()
-
-    if FLAGS.dataset:
-        train_dataset = dataset.load_tfrecord_dataset(
+    train_dataset = dataset.load_tfrecord_dataset(
             FLAGS.dataset, FLAGS.classes, FLAGS.size)
-    else:
-        train_dataset = dataset.load_fake_dataset()
-    train_dataset = train_dataset.shuffle(buffer_size=512)
-    train_dataset = train_dataset.batch(FLAGS.batch_size)
-    train_dataset = train_dataset.map(lambda x, y: (
-        dataset.transform_images(x, FLAGS.size),
-        dataset.transform_targets(y, anchors, anchor_masks, FLAGS.size)))
-    train_dataset = train_dataset.prefetch(
-        buffer_size=tf.data.experimental.AUTOTUNE)
-
-    if FLAGS.val_dataset:
-        val_dataset = dataset.load_tfrecord_dataset(
+    val_dataset = dataset.load_tfrecord_dataset(
             FLAGS.val_dataset, FLAGS.classes, FLAGS.size)
-    else:
-        val_dataset = dataset.load_fake_dataset()
-    val_dataset = val_dataset.batch(FLAGS.batch_size)
-    val_dataset = val_dataset.map(lambda x, y: (
-        dataset.transform_images(x, FLAGS.size),
-        dataset.transform_targets(y, anchors, anchor_masks, FLAGS.size)))
+    
+    optimizer = tf.keras.optimizers.Adam(lr=FLAGS.learning_rate)
+    loss = [YoloLoss(anchors[mask], classes=FLAGS.num_classes)
+            for mask in anchor_masks]
 
-    if FLAGS.mode == 'eager_tf':
-        # Eager mode is great for debugging
-        # Non eager graph mode is recommended for real training
-        avg_loss = tf.keras.metrics.Mean('loss', dtype=tf.float32)
-        avg_val_loss = tf.keras.metrics.Mean('val_loss', dtype=tf.float32)
+    model.compile(optimizer=optimizer, loss=loss,
+                  run_eagerly=(FLAGS.mode == 'eager_fit'))
 
-        for epoch in range(1, FLAGS.epochs + 1):
-            for batch, (images, labels) in enumerate(train_dataset):
-                with tf.GradientTape() as tape:
-                    outputs = model(images, training=True)
-                    regularization_loss = tf.reduce_sum(model.losses)
-                    pred_loss = []
-                    for output, label, loss_fn in zip(outputs, labels, loss):
-                        pred_loss.append(loss_fn(label, output))
-                    total_loss = tf.reduce_sum(pred_loss) + regularization_loss
 
-                grads = tape.gradient(total_loss, model.trainable_variables)
-                optimizer.apply_gradients(
-                    zip(grads, model.trainable_variables))
+    run = wandb.init(project='yolo_init_check',
+                 config={  # and include hyperparameters and metadata
+                     #"learning_rate": 0.005,
+                     "epochs": FLAGS.epochs,
+                     "batch_size": FLAGS.batch_size,
+                     #"loss_function": "sparse_categorical_crossentropy",
+                     "architecture": "yolo_v3",
+                     "dataset": "big_sart"
+                 })
 
-                logging.info("{}_train_{}, {}, {}".format(
-                    epoch, batch, total_loss.numpy(),
-                    list(map(lambda x: np.sum(x.numpy()), pred_loss))))
-                avg_loss.update_state(total_loss)
-
-            for batch, (images, labels) in enumerate(val_dataset):
-                outputs = model(images)
-                regularization_loss = tf.reduce_sum(model.losses)
-                pred_loss = []
-                for output, label, loss_fn in zip(outputs, labels, loss):
-                    pred_loss.append(loss_fn(label, output))
-                total_loss = tf.reduce_sum(pred_loss) + regularization_loss
-
-                logging.info("{}_val_{}, {}, {}".format(
-                    epoch, batch, total_loss.numpy(),
-                    list(map(lambda x: np.sum(x.numpy()), pred_loss))))
-                avg_val_loss.update_state(total_loss)
-
-            logging.info("{}, train: {}, val: {}".format(
-                epoch,
-                avg_loss.result().numpy(),
-                avg_val_loss.result().numpy()))
-
-            avg_loss.reset_states()
-            avg_val_loss.reset_states()
-            model.save_weights(
-                'checkpoints/yolov3_train_{}.tf'.format(epoch))
-    else:
         callbacks = [
             ReduceLROnPlateau(verbose=1),
             EarlyStopping(patience=3, verbose=1),
             ModelCheckpoint('checkpoints/yolov3_train.tf',
                             verbose=1, save_weights_only=True),
-            TensorBoard(log_dir='logs', histogram_freq=1)
+            TensorBoard(log_dir='logs', histogram_freq=1),
+            WandbCallback()
         ]
 
         print(model.summary())
